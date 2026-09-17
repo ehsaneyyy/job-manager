@@ -1,0 +1,146 @@
+import base64
+from email.mime.text import MIMEText
+from typing import Any
+
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+
+from app.core.config import settings
+from app.core.security import vault
+
+SCOPES = [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/gmail.modify",
+]
+
+
+def build_auth_url(redirect_uri: str = "http://localhost:8766") -> tuple[str, InstalledAppFlow]:
+    flow = InstalledAppFlow.from_client_secrets_dict(
+        client_secrets_dict={
+            "installed": {
+                "client_id": "POST_YOUR_OAUTH_CLIENT_ID_HERE",
+                "client_secret": "POST_YOUR_CLIENT_SECRET_HERE",
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": [redirect_uri],
+            }
+        },
+        scopes=SCOPES,
+    )
+    auth_url, _ = flow.authorization_url(prompt="consent", redirect_uri=redirect_uri)
+    return auth_url, flow
+
+
+def store_credentials_from_code(code: str, flow: InstalledAppFlow, redirect_uri: str = "http://localhost:8766") -> None:
+    flow.fetch_token(code=code, redirect_uri=redirect_uri)
+    creds = flow.credentials
+    token_data = {
+        "token": creds.token,
+        "refresh_token": creds.refresh_token,
+        "token_uri": creds.token_uri,
+        "client_id": creds.client_id,
+        "client_secret": creds.client_secret,
+        "scopes": creds.scopes,
+    }
+    import json
+
+    vault.store("gmail_token_json", json.dumps(token_data))
+
+
+def _get_gmail_service() -> Any:
+    token_json = vault.retrieve("gmail_token_json")
+    if not token_json:
+        raise RuntimeError(
+            "Gmail is not connected. Start the connection at POST /api/auth/gmail/start"
+        )
+    import json
+
+    token_data = json.loads(token_json)
+    creds = Credentials(
+        token=token_data["token"],
+        refresh_token=token_data.get("refresh_token"),
+        token_uri=token_data.get("token_uri", "https://oauth2.googleapis.com/token"),
+        client_id=token_data.get("client_id"),
+        client_secret=token_data.get("client_secret"),
+        scopes=token_data.get("scopes", SCOPES),
+    )
+    if creds.expired and creds.refresh_token:
+        creds.refresh(Request())
+        token_data["token"] = creds.token
+        vault.store("gmail_token_json", json.dumps(token_data))
+    return build("gmail", "v1", credentials=creds)
+
+
+def list_messages(query: str = "is:unread", max_results: int = 20) -> list[dict[str, str]]:
+    service = _get_gmail_service()
+    response = service.users().messages().list(userId="me", q=query, maxResults=max_results).execute()
+    messages = response.get("messages", [])
+    results = []
+    for msg_meta in messages:
+        full_msg = service.users().messages().get(userId="me", id=msg_meta["id"], format="full").execute()
+        headers = {h["name"].lower(): h["value"] for h in full_msg.get("payload", {}).get("headers", [])}
+        results.append(
+            {
+                "id": full_msg["id"],
+                "thread_id": full_msg.get("threadId", ""),
+                "subject": headers.get("subject", ""),
+                "from": headers.get("from", ""),
+                "snippet": full_msg.get("snippet", ""),
+                "is_read": "UNREAD" not in full_msg.get("labelIds", []),
+                "labels": full_msg.get("labelIds", []),
+            }
+        )
+    return results
+
+
+def get_thread(thread_id: str) -> list[dict[str, str]]:
+    service = _get_gmail_service()
+    thread = service.users().threads().get(userId="me", id=thread_id, format="full").execute()
+    messages = []
+    for msg in thread.get("messages", []):
+        headers = {h["name"].lower(): h["value"] for h in msg.get("payload", {}).get("headers", [])}
+        body = ""
+        payload = msg.get("payload", {})
+        if "data" in payload.get("body", {}):
+            body = base64.urlsafe_b64decode(payload["body"]["data"]).decode("utf-8", errors="replace")
+        elif payload.get("mimeType", "").startswith("text/plain"):
+            for part in payload.get("parts", []):
+                if part.get("mimeType") == "text/plain" and "data" in part.get("body", {}):
+                    body = base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8", errors="replace")
+                    break
+        messages.append(
+            {
+                "id": msg["id"],
+                "from": headers.get("from", ""),
+                "to": headers.get("to", ""),
+                "subject": headers.get("subject", ""),
+                "date": headers.get("date", ""),
+                "body": body,
+            }
+        )
+    return messages
+
+
+def send_email(to: str, subject: str, body: str, thread_id: str | None = None) -> str:
+    service = _get_gmail_service()
+    message = MIMEText(body)
+    message["to"] = to
+    message["subject"] = subject
+    raw = base64.urlsafe_b64encode(message.as_bytes()).decode("ascii")
+    params: dict[str, Any] = {"userId": "me", "body": {"raw": raw}}
+    if thread_id:
+        params["threadId"] = thread_id
+    result = service.users().messages().send(**params).execute()
+    return result["id"]
+
+
+def mark_message_as_read(message_id: str) -> None:
+    service = _get_gmail_service()
+    service.users().messages().modify(userId="me", id=message_id, body={"removeLabelIds": ["UNREAD"]}).execute()
+
+
+def is_connected() -> bool:
+    return vault.retrieve("gmail_token_json") is not None
