@@ -35,8 +35,8 @@ def load_gmail_oauth_client_config() -> dict[str, str]:
             "client_secret": settings.google_client_secret,
         }
     raise RuntimeError(
-        "Gmail OAuth credentials are missing. Save credentials.json in backend/ "
-        "or set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in backend/.env."
+        "Gmail is not set up yet. Do the one-time Google Cloud steps in SETUP.md (step 3), "
+        "save the downloaded file as backend\\credentials.json, restart run.bat, then try again."
     )
 
 
