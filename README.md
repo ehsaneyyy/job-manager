@@ -2,6 +2,10 @@
 
 An AI job-hunting assistant that tracks applications, coaches your inbox, and helps you apply on LinkedIn and Indeed from Windows and Android — 100% free.
 
+## Quick start
+
+Follow [`SETUP.md`](SETUP.md) — full beginner guide with zero coding required. It covers the free AI provider key, Gmail connection, browser login, and phone access.
+
 ## How it works
 
 - Your laptop runs a lightweight server (no AI model runs locally, so no heat).

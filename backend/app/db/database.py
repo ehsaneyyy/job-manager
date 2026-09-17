@@ -1,7 +1,8 @@
 from collections.abc import AsyncIterator
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import settings
 
@@ -18,6 +19,6 @@ async def get_session() -> AsyncIterator[AsyncSession]:
 async def initialize_database() -> None:
     import app.db.models  # noqa: F401
 
+    settings.ensure_directories()
     async with async_engine.begin() as connection:
         await connection.run_sync(SQLModel.metadata.create_all)
-    settings.ensure_directories()
