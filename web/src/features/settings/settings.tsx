@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CheckCircle2, ExternalLink, Mail, Plug, Server } from "lucide-react";
+import { CheckCircle2, Mail, Plug, Server } from "lucide-react";
 import {
   fetchGmailStatus,
   finishGmailConnection,
@@ -55,43 +55,24 @@ function GmailConnection() {
     queryKey: ["gmail-status"],
     queryFn: fetchGmailStatus,
   });
-  const [waiting, setWaiting] = useState(false);
-  const [authUrl, setAuthUrl] = useState("");
   const [message, setMessage] = useState("");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showManual, setShowManual] = useState(false);
 
   async function connect() {
     setBusy(true);
     setMessage("");
     try {
       const start = await startGmailConnection();
-      setAuthUrl(start.authorizationUrl);
-      setWaiting(true);
-      pollUntilConnected();
+      if (!start.authorizationUrl || !start.authorizationUrl.startsWith("http")) {
+        throw new Error("The server did not return a valid sign-in link. Close run.bat and start it again, then retry.");
+      }
+      window.location.assign(start.authorizationUrl);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not start Gmail connection");
-    } finally {
       setBusy(false);
     }
-  }
-
-  function pollUntilConnected() {
-    let attempts = 0;
-    const timer = window.setInterval(async () => {
-      attempts += 1;
-      const status = await fetchGmailStatus();
-      if (status.connected) {
-        window.clearInterval(timer);
-        setWaiting(false);
-        setMessage("Gmail connected. Syncing is ready.");
-        refetch();
-      } else if (attempts > 45) {
-        window.clearInterval(timer);
-        setWaiting(false);
-        setMessage("Did not detect a sign-in. If the Google tab is stuck on a blank page, copy the code from its address bar and paste it below.");
-      }
-    }, 2000);
   }
 
   return (
@@ -108,7 +89,7 @@ function GmailConnection() {
         )}
       </div>
 
-      {!gmailStatus?.connected && !waiting && (
+      {!gmailStatus?.connected && (
         <button
           onClick={connect}
           disabled={busy}
@@ -118,26 +99,20 @@ function GmailConnection() {
         </button>
       )}
 
-      {waiting && (
-        <div className="mt-3 space-y-2">
-          <a
-            href={authUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-2xl bg-accent-soft px-4 py-2.5 text-sm font-medium text-accent transition-colors hover:bg-accent hover:text-background"
-          >
-            <ExternalLink size={15} /> Open Google sign-in
-          </a>
-          <p className="text-xs text-text-muted">
-            Sign in with Google, tap Allow, then come back here. JobBot detects it automatically within a few seconds.
-          </p>
-        </div>
+      {!gmailStatus?.connected && (
+        <button
+          onClick={() => setShowManual((shown) => !shown)}
+          className="mt-2 flex items-center gap-1 text-xs text-text-muted underline-offset-2 hover:underline"
+        >
+          Trouble? Paste the code manually
+        </button>
       )}
 
-      {(waiting || code) && (
+      {showManual && (
         <div className="mt-3 space-y-2">
           <p className="text-xs text-text-muted">
-            On mobile or stuck? Copy everything after <code className="text-accent">?</code> from the address bar of the Google tab and paste it here.
+            Use a browser where this app is reachable, click Connect Gmail, sign in, then this page sends you to a JobBot page that says "connected". If you cannot reach that page, copy everything after
+            {" "}<code className="text-accent">?</code>{" "}from the Google address bar and paste it here instead.
           </p>
           <div className="flex gap-2">
             <FormInput
