@@ -1,7 +1,7 @@
 from urllib.parse import parse_qsl
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.security import require_valid_api_key
@@ -11,12 +11,21 @@ from app.tools import gmail
 router = APIRouter(prefix="/api/auth", tags=["auth"], dependencies=[Depends(require_valid_api_key)])
 
 
+def _to_camel(field_name: str) -> str:
+    head, *tail = field_name.split("_")
+    return head + "".join(part.capitalize() for part in tail)
+
+
 class GmailStartResponse(BaseModel):
+    model_config = ConfigDict(alias_generator=_to_camel, populate_by_name=True)
+
     authorization_url: str
     redirect_uri: str
 
 
 class GmailFinishRequest(BaseModel):
+    model_config = ConfigDict(alias_generator=_to_camel, populate_by_name=True)
+
     code: str
     redirect_uri: str = "http://localhost:8766"
 
