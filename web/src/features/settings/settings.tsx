@@ -145,8 +145,6 @@ function GmailConnection() {
 }
 
 function BrowserLogin() {
-  const [message, setMessage] = useState("");
-
   return (
     <Card>
       <div className="flex items-center gap-2">
@@ -160,7 +158,6 @@ function BrowserLogin() {
         <a href={`${getApiBase()}/docs`} target="_blank" rel="noreferrer" className="text-xs text-accent underline">
           Use the <span className="font-mono">/api/auth/browser/login</span> endpoint in the API docs to start the browser.
         </a>
-        {message && <p className="mt-2 text-xs text-success">{message}</p>}
       </div>
     </Card>
   );

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Bot, Send, Wrench, AlertCircle } from "lucide-react";
 import { cn } from "../../lib/utils";
+import { fetchChatHistory, sendChatMessage } from "../../lib/api";
 
 interface ChatMessage {
   id: number;
@@ -21,7 +22,6 @@ export default function ChatView() {
     let cancelled = false;
     (async () => {
       try {
-        const { fetchChatHistory } = await import("../../lib/api");
         const history = await fetchChatHistory();
         if (!cancelled) setMessages(history);
       } catch {
@@ -54,7 +54,6 @@ export default function ChatView() {
     setIsSending(true);
 
     try {
-      const { sendChatMessage } = await import("../../lib/api");
       const result = await sendChatMessage(text);
       setMessages((prev) => [
         ...prev,

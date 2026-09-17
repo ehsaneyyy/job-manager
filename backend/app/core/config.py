@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     browser_headless: bool = True
     browser_profile_dir: Path = Path("./data/browser_profile")
     web_origins: str = "http://localhost:5173,http://localhost:3000,http://localhost:1420"
+    google_client_id: str = ""
+    google_client_secret: str = ""
 
     @property
     def allowed_origins(self) -> list[str]:

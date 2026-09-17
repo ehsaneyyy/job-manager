@@ -1,5 +1,7 @@
 import base64
+import json
 from email.mime.text import MIMEText
+from pathlib import Path
 from typing import Any
 
 from google.auth.transport.requests import Request
@@ -17,12 +19,34 @@ SCOPES = [
 ]
 
 
+def load_gmail_oauth_client_config() -> dict[str, str]:
+    backend_root = Path(__file__).resolve().parents[2]
+    credentials_file = backend_root / "credentials.json"
+    if credentials_file.exists():
+        raw = json.loads(credentials_file.read_text(encoding="utf-8"))
+        client_section = raw.get("installed") or raw.get("web") or {}
+        return {
+            "client_id": client_section["client_id"],
+            "client_secret": client_section["client_secret"],
+        }
+    if settings.google_client_id and settings.google_client_secret:
+        return {
+            "client_id": settings.google_client_id,
+            "client_secret": settings.google_client_secret,
+        }
+    raise RuntimeError(
+        "Gmail OAuth credentials are missing. Save credentials.json in backend/ "
+        "or set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in backend/.env."
+    )
+
+
 def build_auth_url(redirect_uri: str = "http://localhost:8766") -> tuple[str, InstalledAppFlow]:
-    flow = InstalledAppFlow.from_client_secrets_dict(
-        client_secrets_dict={
+    client_config = load_gmail_oauth_client_config()
+    flow = InstalledAppFlow.from_client_config(
+        client_config={
             "installed": {
-                "client_id": "POST_YOUR_OAUTH_CLIENT_ID_HERE",
-                "client_secret": "POST_YOUR_CLIENT_SECRET_HERE",
+                "client_id": client_config["client_id"],
+                "client_secret": client_config["client_secret"],
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
                 "redirect_uris": [redirect_uri],
