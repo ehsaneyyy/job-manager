@@ -11,6 +11,7 @@ dist/
 build/
 *.log
 *.tsbuildinfo
+*.timestamp-*.mjs
 .DS_Store
 lib/
 gen/
