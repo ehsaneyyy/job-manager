@@ -23,7 +23,7 @@ export default function ChatView() {
     (async () => {
       try {
         const history = await fetchChatHistory();
-        if (!cancelled) setMessages(history);
+        if (!cancelled) setMessages(Array.isArray(history) ? history : []);
       } catch {
         if (!cancelled) setError("Could not load history. Check server and API key in Settings.");
       }
