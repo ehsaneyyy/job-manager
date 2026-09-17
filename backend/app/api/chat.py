@@ -2,10 +2,10 @@ import logging
 import traceback
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.agent import agent_respond
+from app.core.api import APIModel
 from app.core.security import require_valid_api_key
 from app.db.database import get_session
 from app.tools.tracker import ConversationLog
@@ -15,17 +15,17 @@ router = APIRouter(prefix="/api/chat", tags=["chat"], dependencies=[Depends(requ
 logger = logging.getLogger("jobmanager.chat")
 
 
-class SendRequest(BaseModel):
+class SendRequest(APIModel):
     message: str
 
 
-class SendResponse(BaseModel):
+class SendResponse(APIModel):
     reply: str
     tools_used: list[str]
     user_message: str
 
 
-class HistoryResponse(BaseModel):
+class HistoryResponse(APIModel):
     messages: list[dict]
 
 
@@ -77,8 +77,8 @@ async def chat_history(session: AsyncSession = Depends(get_session)) -> HistoryR
                 "id": message.id,
                 "role": message.role,
                 "content": message.content,
-                "tool_used": message.tool_used,
-                "created_at": message.created_at.isoformat() if message.created_at else None,
+                "toolUsed": message.tool_used,
+                "createdAt": message.created_at.isoformat() if message.created_at else None,
             }
             for message in messages
         ]

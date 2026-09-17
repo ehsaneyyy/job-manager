@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.api import APIModel
 from app.core.security import require_valid_api_key
 from app.db.database import get_session
 from app.tools.tracker import EmailBox, JobTracker
@@ -9,7 +9,7 @@ from app.tools.tracker import EmailBox, JobTracker
 router = APIRouter(prefix="/api/stats", tags=["stats"], dependencies=[Depends(require_valid_api_key)])
 
 
-class DashboardStats(BaseModel):
+class DashboardStats(APIModel):
     total_applied: int
     awaiting_reply: int
     under_review: int

@@ -47,16 +47,16 @@ class JobTracker:
         if status_filter:
             statement = statement.where(Job.status == status_filter)
         statement = statement.order_by(Job.applied_at.desc())
-        return list((await self.session.exec(statement)).all())
+        return list((await self.session.execute(statement)).scalars().all())
 
     async def jobs_due_for_follow_up(self, before: datetime | None = None) -> list[Job]:
         cutoff = before or datetime.now(timezone.utc)
         statement = select(Job).where(Job.next_follow_up.isnot(None), Job.next_follow_up <= cutoff)
-        return list((await self.session.exec(statement)).all())
+        return list((await self.session.execute(statement)).scalars().all())
 
     async def job_status_counts(self) -> dict[str, int]:
         statement = select(Job.status, func.count(Job.id)).group_by(Job.status)
-        rows = (await self.session.exec(statement)).all()
+        rows = (await self.session.execute(statement)).all()
         counts = {status: 0 for status in VALID_JOB_STATUSES}
         for status, count in rows:
             counts[status] = count
@@ -64,7 +64,7 @@ class JobTracker:
 
     async def consent_to_company(self, company: str, contact_email: str) -> Job | None:
         statement = select(Job).where(func.lower(Job.company) == company.lower()).limit(1)
-        job = (await self.session.exec(statement)).first()
+        job = (await self.session.execute(statement)).scalars().first()
         if job is None:
             job = await self.add_job(company=company, role="", platform="email")
         return job
@@ -76,7 +76,7 @@ class EmailBox:
 
     async def upsert_email(self, external_id: str, subject: str, sender: str, snippet: str, thread_id: str, received_at: datetime | None = None) -> EmailRecord:
         statement = select(EmailRecord).where(EmailRecord.external_id == external_id)
-        existing = (await self.session.exec(statement)).first()
+        existing = (await self.session.execute(statement)).scalars().first()
         if existing:
             return existing
         email = EmailRecord(
@@ -97,7 +97,7 @@ class EmailBox:
         if unread_only:
             statement = statement.where(EmailRecord.is_read == False)  # noqa: E712
         statement = statement.order_by(EmailRecord.received_at.desc()).limit(limit)
-        return list((await self.session.exec(statement)).all())
+        return list((await self.session.execute(statement)).scalars().all())
 
     async def mark_read(self, email_id: int) -> EmailRecord | None:
         email = await self.session.get(EmailRecord, email_id)
@@ -121,7 +121,7 @@ class EmailBox:
 
     async def recent_sender_counts(self) -> dict[str, int]:
         statement = select(EmailRecord.sender, func.count(EmailRecord.id)).group_by(EmailRecord.sender).order_by(func.count(EmailRecord.id).desc()).limit(10)
-        return {sender or "unknown": count for sender, count in (await self.session.exec(statement)).all()}
+        return {sender or "unknown": count for sender, count in (await self.session.execute(statement)).all()}
 
 
 class ConversationLog:
@@ -137,7 +137,7 @@ class ConversationLog:
 
     async def history(self, limit: int = 40) -> list[ChatMessage]:
         statement = select(ChatMessage).order_by(ChatMessage.created_at.desc()).limit(limit)
-        return list(reversed((await self.session.exec(statement)).all()))
+        return list(reversed((await self.session.execute(statement)).scalars().all()))
 
 
 class ProfileStore:
@@ -146,7 +146,7 @@ class ProfileStore:
 
     async def set_value(self, key: str, value: str) -> ProfileEntry:
         statement = select(ProfileEntry).where(ProfileEntry.key == key)
-        entry = (await self.session.exec(statement)).first()
+        entry = (await self.session.execute(statement)).scalars().first()
         if entry is None:
             entry = ProfileEntry(key=key, value=value)
         entry.value = value
@@ -158,9 +158,9 @@ class ProfileStore:
 
     async def get_value(self, key: str) -> str | None:
         statement = select(ProfileEntry).where(ProfileEntry.key == key)
-        entry = (await self.session.exec(statement)).first()
+        entry = (await self.session.execute(statement)).scalars().first()
         return entry.value if entry else None
 
     async def all_values(self) -> dict[str, str]:
         statement = select(ProfileEntry)
-        return {entry.key: entry.value for entry in (await self.session.exec(statement)).all()}
+        return {entry.key: entry.value for entry in (await self.session.execute(statement)).scalars().all()}

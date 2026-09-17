@@ -34,7 +34,7 @@ async def delete_profile_value(key: str, session: AsyncSession = Depends(get_ses
     from app.db.models import ProfileEntry
 
     statement = select(ProfileEntry).where(ProfileEntry.key == key)
-    entry = (await session.exec(statement)).first()
+    entry = (await session.execute(statement)).scalars().first()
     if entry is not None:
         await session.delete(entry)
         await session.commit()

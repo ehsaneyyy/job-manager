@@ -1,9 +1,10 @@
 import traceback
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.api import APIModel
 from app.core.security import require_valid_api_key
 from app.db.database import get_session
 from app.db.models import EmailRecord
@@ -13,19 +14,32 @@ from app.tools.tracker import EmailBox
 router = APIRouter(prefix="/api/emails", tags=["emails"], dependencies=[Depends(require_valid_api_key)])
 
 
-class SyncResponse(BaseModel):
+class EmailRecordOut(APIModel):
+    id: int | None = None
+    external_id: str
+    subject: str
+    sender: str
+    snippet: str
+    summary: str
+    thread_id: str
+    received_at: datetime
+    is_read: bool
+    is_replied: bool
+
+
+class SyncResponse(APIModel):
     synced_count: int
     error: str = ""
 
 
-class SendEmailRequest(BaseModel):
+class SendEmailRequest(APIModel):
     to: str
     subject: str
     body: str
     thread_id: str | None = None
 
 
-class SentEmailResponse(BaseModel):
+class SentEmailResponse(APIModel):
     message_id: str
     sent: bool
 
@@ -55,13 +69,13 @@ async def sync_inbox(session: AsyncSession = Depends(get_session), unread_only: 
     return SyncResponse(synced_count=synced)
 
 
-@router.get("")
+@router.get("", response_model=list[EmailRecordOut])
 async def list_emails(limit: int = 50, unread_only: bool = False, session: AsyncSession = Depends(get_session)) -> list[EmailRecord]:
     email_box = EmailBox(session)
     return await email_box.list_emails(limit=limit, unread_only=unread_only)
 
 
-@router.get("/{email_id}")
+@router.get("/{email_id}", response_model=EmailRecordOut)
 async def get_email(email_id: int, session: AsyncSession = Depends(get_session)) -> EmailRecord:
     email = await session.get(EmailRecord, email_id)
     if email is None:
@@ -69,7 +83,7 @@ async def get_email(email_id: int, session: AsyncSession = Depends(get_session))
     return email
 
 
-@router.post("/{email_id}/read")
+@router.post("/{email_id}/read", response_model=EmailRecordOut)
 async def mark_read(email_id: int, session: AsyncSession = Depends(get_session)) -> EmailRecord:
     email_box = EmailBox(session)
     updated = await email_box.mark_read(email_id)
