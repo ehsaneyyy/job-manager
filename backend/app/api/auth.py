@@ -1,3 +1,5 @@
+from urllib.parse import parse_qsl
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -23,10 +25,17 @@ class GmailStatusResponse(BaseModel):
     connected: bool
 
 
+def _extract_oauth_values(candidate_value: str) -> tuple[str, str]:
+    if "code=" in candidate_value:
+        query = dict(parse_qsl(candidate_value))
+        return query.get("code", ""), query.get("state", "")
+    return candidate_value, ""
+
+
 @router.post("/gmail/start", response_model=GmailStartResponse)
 async def start_gmail_connection() -> GmailStartResponse:
     try:
-        authorization_url, _ = gmail.build_auth_url()
+        authorization_url, _ = gmail.start_authorization()
         return GmailStartResponse(authorization_url=authorization_url, redirect_uri="http://localhost:8766")
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Gmail OAuth setup failed: {exc}")
@@ -34,9 +43,11 @@ async def start_gmail_connection() -> GmailStartResponse:
 
 @router.post("/gmail/finish", response_model=GmailStatusResponse)
 async def finish_gmail_connection(request: GmailFinishRequest) -> GmailStatusResponse:
-    _, flow = gmail.build_auth_url(request.redirect_uri)
+    code, state_value = _extract_oauth_values(request.code)
+    if not code:
+        raise HTTPException(status_code=400, detail="No authorization code found. Copy the code from the browser address bar.")
     try:
-        gmail.store_credentials_from_code(request.code, flow, request.redirect_uri)
+        gmail.exchange_authorization_code(code, state_value)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Could not exchange the authorization code: {exc}")
     return GmailStatusResponse(connected=True)

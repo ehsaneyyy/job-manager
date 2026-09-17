@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CheckCircle2, Link2, Mail, Plug, Server } from "lucide-react";
+import { CheckCircle2, Mail, Plug, Server } from "lucide-react";
 import {
   fetchGmailStatus,
   finishGmailConnection,
@@ -55,10 +55,43 @@ function GmailConnection() {
     queryKey: ["gmail-status"],
     queryFn: fetchGmailStatus,
   });
-  const [authUrl, setAuthUrl] = useState("");
-  const [code, setCode] = useState("");
+  const [waiting, setWaiting] = useState(false);
   const [message, setMessage] = useState("");
+  const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
+
+  async function connect() {
+    setBusy(true);
+    setMessage("");
+    try {
+      const start = await startGmailConnection();
+      window.open(start.authorizationUrl, "_blank");
+      setWaiting(true);
+      pollUntilConnected();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not start Gmail connection");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function pollUntilConnected() {
+    let attempts = 0;
+    const timer = window.setInterval(async () => {
+      attempts += 1;
+      const status = await fetchGmailStatus();
+      if (status.connected) {
+        window.clearInterval(timer);
+        setWaiting(false);
+        setMessage("Gmail connected. Syncing is ready.");
+        refetch();
+      } else if (attempts > 45) {
+        window.clearInterval(timer);
+        setWaiting(false);
+        setMessage("Did not detect a sign-in. If the Google tab is stuck on a blank page, copy the code from its address bar and paste it below.");
+      }
+    }, 2000);
+  }
 
   return (
     <Card>
@@ -74,20 +107,9 @@ function GmailConnection() {
         )}
       </div>
 
-      {!authUrl && (
+      {!gmailStatus?.connected && !waiting && (
         <button
-          onClick={async () => {
-            setBusy(true);
-            setMessage("");
-            try {
-              const start = await startGmailConnection();
-              setAuthUrl(start.authorizationUrl);
-            } catch (error) {
-              setMessage(error instanceof Error ? error.message : "Could not start Gmail connection");
-            } finally {
-              setBusy(false);
-            }
-          }}
+          onClick={connect}
           disabled={busy}
           className="mt-3 rounded-2xl bg-accent-soft px-4 py-2.5 text-sm font-medium text-accent transition-colors hover:bg-accent hover:text-background disabled:opacity-40"
         >
@@ -95,25 +117,22 @@ function GmailConnection() {
         </button>
       )}
 
-      {authUrl && (
-        <div className="mt-3 space-y-3">
+      {waiting && (
+        <p className="mt-3 text-xs text-text-muted">
+          Sign in to Google in the new tab, then allow access. JobBot will detect it automatically — stay here.
+        </p>
+      )}
+
+      {(waiting || code) && (
+        <div className="mt-3 space-y-2">
           <p className="text-xs text-text-muted">
-            1. Open the Google sign-in link, allow access, then copy the code from the address bar.
+            On mobile or stuck? Copy everything after <code className="text-accent">?</code> from the address bar of the Google tab and paste it here.
           </p>
-          <a
-            href={authUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="flex items-center gap-1 break-all text-xs text-accent underline"
-          >
-            <Link2 size={14} />
-            Open Google sign-in
-          </a>
           <div className="flex gap-2">
             <FormInput
               value={code}
               onChange={(e) => setCode(e.target.value)}
-              placeholder="paste authorization code"
+              placeholder="code=...&state=..."
               className="flex-1"
             />
             <button
@@ -122,8 +141,8 @@ function GmailConnection() {
                 setMessage("");
                 try {
                   await finishGmailConnection(code.trim(), "http://localhost:8766");
-                  setMessage("Gmail connected. Syncing is ready.");
-                  setAuthUrl("");
+                  setMessage("Gmail connected.");
+                  setCode("");
                   refetch();
                 } catch (error) {
                   setMessage(error instanceof Error ? error.message : "Connection failed");
@@ -137,8 +156,13 @@ function GmailConnection() {
               {busy ? "…" : "Finish"}
             </button>
           </div>
-          {message && <p className={`text-xs ${message.toLowerCase().includes("fail") || message.toLowerCase().includes("could") ? "text-danger" : "text-success"}`}>{message}</p>}
         </div>
+      )}
+
+      {message && (
+        <p className={`mt-2 text-xs ${/fail|could|did not|cannot|stuck/i.test(message) ? "text-danger" : "text-success"}`}>
+          {message}
+        </p>
       )}
     </Card>
   );

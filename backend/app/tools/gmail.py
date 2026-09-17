@@ -1,8 +1,11 @@
 import base64
 import json
+import threading
 from email.mime.text import MIMEText
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qsl, urlparse
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -17,6 +20,10 @@ SCOPES = [
     "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/gmail.modify",
 ]
+
+_pending_flows: dict[str, InstalledAppFlow] = {}
+_callback_server: ThreadingHTTPServer | None = None
+_callback_server_lock = threading.Lock()
 
 
 def load_gmail_oauth_client_config() -> dict[str, str]:
@@ -40,9 +47,9 @@ def load_gmail_oauth_client_config() -> dict[str, str]:
     )
 
 
-def build_auth_url(redirect_uri: str = "http://localhost:8766") -> tuple[str, InstalledAppFlow]:
+def _build_flow(redirect_uri: str) -> InstalledAppFlow:
     client_config = load_gmail_oauth_client_config()
-    flow = InstalledAppFlow.from_client_config(
+    return InstalledAppFlow.from_client_config(
         client_config={
             "installed": {
                 "client_id": client_config["client_id"],
@@ -54,15 +61,35 @@ def build_auth_url(redirect_uri: str = "http://localhost:8766") -> tuple[str, In
         },
         scopes=SCOPES,
     )
-    flow.redirect_uri = redirect_uri
-    auth_url, _ = flow.authorization_url(prompt="consent")
-    return auth_url, flow
 
 
-def store_credentials_from_code(code: str, flow: InstalledAppFlow, redirect_uri: str = "http://localhost:8766") -> None:
+def _extract_query_parameter(authorization_url: str, param_name: str) -> str:
+    query_string = urlparse(authorization_url).query
+    for key, value in parse_qsl(query_string):
+        if key == param_name:
+            return value
+    return ""
+
+
+def start_authorization(redirect_uri: str = "http://localhost:8766") -> tuple[str, str]:
+    flow = _build_flow(redirect_uri)
     flow.redirect_uri = redirect_uri
+    authorization_url, _ = flow.authorization_url(prompt="consent")
+    state_value = _extract_query_parameter(authorization_url, "state")
+    _pending_flows[state_value] = flow
+    _ensure_callback_server(redirect_uri)
+    return authorization_url, state_value
+
+
+def exchange_authorization_code(code: str, state_value: str) -> None:
+    flow = _pending_flows.pop(state_value, None)
+    if flow is None:
+        raise RuntimeError("Authorization flow not found or expired. Please start the connection again.")
     flow.fetch_token(code=code)
-    creds = flow.credentials
+    _persist_credentials(flow.credentials)
+
+
+def _persist_credentials(creds: Credentials) -> None:
     token_data = {
         "token": creds.token,
         "refresh_token": creds.refresh_token,
@@ -71,9 +98,44 @@ def store_credentials_from_code(code: str, flow: InstalledAppFlow, redirect_uri:
         "client_secret": creds.client_secret,
         "scopes": creds.scopes,
     }
-    import json
-
     vault.store("gmail_token_json", json.dumps(token_data))
+
+
+class _OAuthCallbackHandler(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:
+        query = dict(parse_qsl(urlparse(self.path).query))
+        code = query.get("code", "")
+        state_value = query.get("state", "")
+        if not code or not state_value:
+            self._respond(400, "<h2>Missing authorization code.</h2><p>Go back to JobBot and start again.</p>")
+            return
+        try:
+            exchange_authorization_code(code, state_value)
+            self._respond(200, "<h2>JobBot connected to your Gmail.</h2><p>You can close this tab and return to JobBot.</p>")
+        except Exception:
+            self._respond(400, "<h2>Could not connect.</h2><p>Go back to JobBot and try again.</p>")
+
+    def _respond(self, status: int, body: str) -> None:
+        encoded_body = body.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(encoded_body)))
+        self.end_headers()
+        self.wfile.write(encoded_body)
+
+    def log_message(self, message_format: str, *args: Any) -> None:
+        pass
+
+
+def _ensure_callback_server(redirect_uri: str) -> None:
+    global _callback_server
+    with _callback_server_lock:
+        if _callback_server is not None:
+            return
+        callback_port = int(urlparse(redirect_uri).port or 8766)
+        _callback_server = ThreadingHTTPServer(("127.0.0.1", callback_port), _OAuthCallbackHandler)
+        callback_thread = threading.Thread(target=_callback_server.serve_forever, daemon=True)
+        callback_thread.start()
 
 
 def _get_gmail_service() -> Any:
