@@ -54,12 +54,14 @@ def build_auth_url(redirect_uri: str = "http://localhost:8766") -> tuple[str, In
         },
         scopes=SCOPES,
     )
-    auth_url, _ = flow.authorization_url(prompt="consent", redirect_uri=redirect_uri)
+    flow.redirect_uri = redirect_uri
+    auth_url, _ = flow.authorization_url(prompt="consent")
     return auth_url, flow
 
 
 def store_credentials_from_code(code: str, flow: InstalledAppFlow, redirect_uri: str = "http://localhost:8766") -> None:
-    flow.fetch_token(code=code, redirect_uri=redirect_uri)
+    flow.redirect_uri = redirect_uri
+    flow.fetch_token(code=code)
     creds = flow.credentials
     token_data = {
         "token": creds.token,
