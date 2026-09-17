@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CheckCircle2, Mail, Plug, Server } from "lucide-react";
+import { CheckCircle2, ExternalLink, Mail, Plug, Server } from "lucide-react";
 import {
   fetchGmailStatus,
   finishGmailConnection,
@@ -56,6 +56,7 @@ function GmailConnection() {
     queryFn: fetchGmailStatus,
   });
   const [waiting, setWaiting] = useState(false);
+  const [authUrl, setAuthUrl] = useState("");
   const [message, setMessage] = useState("");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -65,7 +66,7 @@ function GmailConnection() {
     setMessage("");
     try {
       const start = await startGmailConnection();
-      window.open(start.authorizationUrl, "_blank");
+      setAuthUrl(start.authorizationUrl);
       setWaiting(true);
       pollUntilConnected();
     } catch (error) {
@@ -118,9 +119,19 @@ function GmailConnection() {
       )}
 
       {waiting && (
-        <p className="mt-3 text-xs text-text-muted">
-          Sign in to Google in the new tab, then allow access. JobBot will detect it automatically — stay here.
-        </p>
+        <div className="mt-3 space-y-2">
+          <a
+            href={authUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-2xl bg-accent-soft px-4 py-2.5 text-sm font-medium text-accent transition-colors hover:bg-accent hover:text-background"
+          >
+            <ExternalLink size={15} /> Open Google sign-in
+          </a>
+          <p className="text-xs text-text-muted">
+            Sign in with Google, tap Allow, then come back here. JobBot detects it automatically within a few seconds.
+          </p>
+        </div>
       )}
 
       {(waiting || code) && (
